@@ -1,0 +1,4 @@
+__pycache__/
+*.pyc
+aster_contacts.comm
+test.bck.hdf

@@ -1,0 +1,11 @@
+contacts 10
+contact_01.png | Fase2 | Inp-profile - (din1025) INP TRÃÂÃÂER 180(3) | area 0.000831757 | patchA 0.000831757 | patchB 0.000831757 | CONT_0_1_1_A | CONT_0_1_1_B
+contact_02.png | Fase2 | Inp-profile - (din1025) INP TRÃÂÃÂER 180(3) | area 4.37075e-05 | patchA 4.37075e-05 | patchB 4.37075e-05 | CONT_0_1_2_A | CONT_0_1_2_B
+contact_03.png | Fase2 | Inp-profile - (din1025) INP TRÃÂÃÂER 180(3) | area 4.37075e-05 | patchA 4.37075e-05 | patchB 4.37075e-05 | CONT_0_1_3_A | CONT_0_1_3_B
+contact_04.png | Inp-profile - (din1025) INP TRÃÂÃÂER 180(3) | Rechteckrohr - (din 59410) RECHTECKROHR - 160 X 80 X 8(5) | area 0.000638846 | patchA 0.000638846 | patchB 0.000638846 | CONT_1_5_1_A | CONT_1_5_1_B
+contact_05.png | Inp-profile - (din1025) INP TRÃÂÃÂER 180(3) | Aufsatz-Linear austragen1 | area 0.0013123 | patchA 0.0013123 | patchB 0.0013123 | CONT_1_6_1_A | CONT_1_6_1_B
+contact_06.png | Inp-profile - (din1025) INP TRÃÂÃÂER 180(3) | Aufsatz-Linear austragen1 | area 0.0013123 | patchA 0.0013123 | patchB 0.0013123 | CONT_1_10_1_A | CONT_1_10_1_B
+contact_07.png | Aufsatz-Linear austragen1 | Aufsatz-Linear austragen1 | area 0.00096 | patchA 0.00096 | patchB 0.00096 | CONT_3_10_1_A | CONT_3_10_1_B
+contact_08.png | Fase2 | Aufsatz-Linear austragen1 | area 0.0479132 | patchA 0.0479132 | patchB 0.0479132 | CONT_4_10_1_A | CONT_4_10_1_B
+contact_09.png | Aufsatz-Linear austragen1 | Ecke brechen1 | area 0.00111282 | patchA 0.00111282 | patchB 0.00111282 | CONT_6_8_1_A | CONT_6_8_1_B
+contact_10.png | Aufsatz-Linear austragen1 | Aufsatz-Linear austragen1 | area 0.00096 | patchA 0.00096 | patchB 0.00096 | CONT_7_10_1_A | CONT_7_10_1_B
