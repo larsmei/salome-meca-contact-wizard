@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-Salome-Meca Contact Wizard v0.0.2
+Salome-Meca Contact Wizard v0.0.3
 Automatic contact detection + Code_Aster constraint generation
 
 Based on the original 3DContact.py by Lucio Gomez (psicofil)
@@ -51,7 +51,7 @@ class ContactWizard(QWidget):
         self.loadParts()
 
     def initUI(self):
-        self.setWindowTitle("Contact Wizard v0.0.2 - Salome-Meca")
+        self.setWindowTitle("Contact Wizard v0.0.3 - Salome-Meca")
         self.resize(950, 620)
         layout = QVBoxLayout()
 
@@ -869,30 +869,248 @@ class ContactWizard(QWidget):
         parts = str(name).split(":")
         return len(parts) >= 2 and all(part.isdigit() for part in parts)
 
-    def _mesh_face_group(self, smesh, mesh, shape, name):
+    def _geom_entry(self, obj):
+        if obj is None:
+            return ""
+        try:
+            entry = salome.ObjectToID(obj)
+            if entry:
+                return str(entry)
+        except Exception:
+            pass
+        try:
+            sobject = salome.myStudy.FindObject(obj)
+            if sobject is not None and sobject.GetID():
+                return str(sobject.GetID())
+        except Exception:
+            pass
+        return ""
+
+    def _same_geom(self, left, right):
+        left_entry = self._geom_entry(left)
+        right_entry = self._geom_entry(right)
+        return bool(left_entry) and left_entry == right_entry
+
+    def _study_parent_shape(self, obj):
+        """Published shape that owns this object in the geometry tree."""
+        entry = self._geom_entry(obj)
+        if not entry:
+            return None
+        try:
+            component = salome.myStudy.FindComponent("GEOM")
+        except Exception:
+            component = None
+        if component is None:
+            return None
+
+        def walk(sobject):
+            iterator = salome.myStudy.NewChildIterator(sobject)
+            while iterator.More():
+                child = iterator.Value()
+                if child.GetID() == entry:
+                    parent = sobject.GetObject()
+                    if parent is not None and hasattr(parent, "GetShapeType"):
+                        return parent
+                    return None
+                found = walk(child)
+                if found is not None:
+                    return found
+                iterator.Next()
+            return None
+
+        return walk(component)
+
+    def _main_shape(self, shape):
+        try:
+            main = geompy.GetMainShape(shape)
+        except Exception:
+            return None
+        if main is None or not hasattr(main, "GetShapeType"):
+            return None
+        return main
+
+    def _area_on_solid(self, solid, shape):
+        """Face area of `shape` that is a sub-shape of `solid`."""
+        try:
+            placed = geompy.GetInPlace(solid, shape, True)
+        except TypeError:
+            try:
+                placed = geompy.GetInPlace(solid, shape)
+            except Exception:
+                return 0.0
+        except Exception:
+            return 0.0
+        if placed is None:
+            return 0.0
+        try:
+            placed.GetShapeType()
+        except Exception:
+            return 0.0
+        return self._shape_area(placed)
+
+    def _host_part_index(self, shape):
+        """Index of the meshed solid that owns this geometry group.
+
+        A group stores sub-shape ids of its own solid. GroupOnGeom on a
+        different solid is empty, and BelongToGeom at 0.01 then keeps faces
+        of a neighbour that merely comes close.
+        """
+        for candidate in (self._study_parent_shape(shape), self._main_shape(shape)):
+            if candidate is None:
+                continue
+            for index, part in enumerate(self.parts):
+                if self._same_geom(part, candidate):
+                    return index
+        best_index = None
+        best_area = 0.0
+        for index, part in enumerate(self.parts):
+            area = self._area_on_solid(part, shape)
+            if area > best_area + 1e-8:
+                best_area = area
+                best_index = index
+        if best_index is not None and best_area > 1e-8:
+            return best_index
+        return None
+
+    def _as_point(self, raw):
+        try:
+            if len(raw) >= 3:
+                return (float(raw[0]), float(raw[1]), float(raw[2]))
+        except Exception:
+            return None
+        return None
+
+    def _element_centers(self, mesh, group):
+        try:
+            ids = list(group.GetIDs())
+        except Exception as exc:
+            print("Gruppen-IDs: %s" % exc, flush=True)
+            return []
+        centers = []
+        for elem in ids:
+            point = None
+            try:
+                point = self._as_point(mesh.BaryCenter(int(elem)))
+            except Exception as exc:
+                if not centers:
+                    print("BaryCenter: %s" % exc, flush=True)
+            if point is None:
+                try:
+                    nodes = mesh.GetElemNodes(int(elem))
+                    if isinstance(nodes, tuple) and len(nodes) == 2 and isinstance(nodes[1], (list, tuple)):
+                        nodes = nodes[1]
+                    sx = sy = sz = 0.0
+                    count = 0
+                    for node in list(nodes):
+                        xyz = mesh.GetNodeXYZ(int(node))
+                        sx += float(xyz[0])
+                        sy += float(xyz[1])
+                        sz += float(xyz[2])
+                        count += 1
+                    if count:
+                        point = (sx / count, sy / count, sz / count)
+                except Exception as exc:
+                    if not centers:
+                        print("Elementknoten: %s" % exc, flush=True)
+                    continue
+            if point is not None:
+                centers.append(point)
+        return centers
+
+    def _discard_shape(self, obj):
+        if obj is None:
+            return
+        try:
+            entry = salome.ObjectToID(obj)
+            sobject = salome.myStudy.FindObjectID(str(entry)) if entry else None
+            if sobject is not None:
+                salome.myStudy.NewBuilder().RemoveObject(sobject)
+        except Exception:
+            pass
+
+    def _point_shape_distance(self, point, shape):
+        vertex = None
+        try:
+            try:
+                vertex = geompy.MakeVertex(
+                    point[0], point[1], point[2], theName=None, theIsPublished=False
+                )
+            except TypeError:
+                vertex = geompy.MakeVertex(point[0], point[1], point[2])
+            return float(geompy.MinDistance(vertex, shape))
+        except Exception as exc:
+            print("Abstand Punkt-Form: %s" % exc, flush=True)
+            return None
+        finally:
+            self._discard_shape(vertex)
+
+    def _group_lies_on_shape(self, mesh, group, shape, limit):
+        """True when element centres lie on the geometry, False when they do not.
+
+        None means the distance could not be measured.
+        """
+        centers = self._element_centers(mesh, group)
+        if not centers:
+            return None
+        if len(centers) > 32:
+            step = max(1, len(centers) // 32)
+            centers = centers[::step]
+        worst = 0.0
+        for center in centers:
+            distance = self._point_shape_distance(center, shape)
+            if distance is None:
+                return None
+            if distance > worst:
+                worst = distance
+            if worst > limit:
+                return False
+        return True
+
+    def _mesh_face_group(self, smesh, mesh, shape, name, on_shape=False):
         import SMESH
         existing = mesh.GetGroupByName(name) or []
         for item in existing:
             mesh.RemoveGroup(item)
+
+        def accept(group, limit, keep_without_distance):
+            if group is None or not group.Size():
+                return False
+            if not on_shape:
+                return True
+            lies = self._group_lies_on_shape(mesh, group, shape, limit)
+            if lies is None:
+                return keep_without_distance
+            if not lies:
+                print("Gruppe %s verworfen, Abstand über %.6g" % (name, limit))
+            return lies
+
         try:
             group = mesh.GroupOnGeom(shape, name, SMESH.FACE)
-            if group.Size():
+            # Centres of a real face group sit on the geometry. 1e-3 rejects
+            # a neighbour that only matches at a tolerance of 0.01.
+            if accept(group, 1e-3, True):
                 return group
-            mesh.RemoveGroup(group)
+            if group is not None:
+                mesh.RemoveGroup(group)
         except Exception as exc:
             print("GroupOnGeom %s: %s" % (name, exc))
         # Patches smaller than one element need a tolerance on the order of
         # the element size, otherwise no face centre falls on the patch.
-        for tolerance in (1e-5, 1e-4, 1e-3, 5e-3, 0.01, 0.02):
+        # Boundary groups stay tighter: 0.01 already reaches the next solid.
+        tolerances = (1e-5, 1e-4, 1e-3) if on_shape else (
+            1e-5, 1e-4, 1e-3, 5e-3, 0.01, 0.02
+        )
+        for tolerance in tolerances:
             try:
                 criterion = smesh.GetCriterion(
                     SMESH.FACE, SMESH.FT_BelongToGeom, SMESH.FT_EqualTo,
                     shape, Tolerance=tolerance
                 )
                 group = mesh.MakeGroupByCriterion(name, criterion)
-                if group.Size():
+                if accept(group, tolerance, False):
                     return group
-                mesh.RemoveGroup(group)
+                if group is not None:
+                    mesh.RemoveGroup(group)
             except Exception as exc:
                 print("BelongToGeom %s tol %s: %s" % (name, tolerance, exc))
         return None
@@ -1199,20 +1417,37 @@ FIN()
 
             self._set_progress(0.72, "Gruppen fixed und load übernehmen")
             for name in ("fixed", "load"):
+                # Only the solid that owns the geometry group. The first mesh
+                # within 0.01 would otherwise keep the faces of a neighbour.
+                host = self._host_part_index(groups[name])
                 chosen = None
-                for mesh in part_meshes:
-                    group = self._mesh_face_group(smesh, mesh, groups[name], name)
-                    if group is not None and group.Size():
-                        chosen = group
-                        break
-                    for item in mesh.GetGroupByName(name) or []:
-                        mesh.RemoveGroup(item)
-                if chosen is None:
-                    QMessageBox.critical(
-                        self, "Netzgruppe leer",
-                        "Die Geometriegruppe %s ist vorhanden, das Netz enthält davon keine Flächen." % name
+                if host is not None:
+                    mesh = part_meshes[host]
+                    chosen = self._mesh_face_group(
+                        smesh, mesh, groups[name], name, on_shape=True
                     )
+                    if chosen is None or not chosen.Size():
+                        chosen = None
+                        for item in mesh.GetGroupByName(name) or []:
+                            mesh.RemoveGroup(item)
+                if chosen is None:
+                    if host is None:
+                        message = (
+                            "Die Geometriegruppe %s lässt sich keinem vernetzten Körper zuordnen."
+                            % name
+                        )
+                    else:
+                        message = (
+                            "Die Geometriegruppe %s gehört zu %s, "
+                            "das Netz dieses Körpers enthält davon keine Flächen."
+                            % (name, self._part_label(self.parts[host], host))
+                        )
+                    QMessageBox.critical(self, "Netzgruppe leer", message)
                     return
+                print(
+                    "Grenzgruppe %s auf %s, %d Flächen"
+                    % (name, self._part_label(self.parts[host], host), chosen.Size())
+                )
 
             kept = []
             skipped = []
@@ -1402,7 +1637,7 @@ FIN()
             QMessageBox.warning(self, "Speichern fehlgeschlagen", str(e))
 
     def build_comm(self, liaison, contact, friction):
-        lines = ["# === Automatisch generierte Kontaktdefinitionen (v0.0.2) ===", ""]
+        lines = ["# === Automatisch generierte Kontaktdefinitionen (v0.0.3) ===", ""]
         if liaison:
             lines.append("# Tie-Constraints (in AFFE_CHAR_MECA einfügen)")
             lines.append("LIAISON_MAIL = (")
