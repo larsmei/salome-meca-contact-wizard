@@ -154,19 +154,39 @@ try:
     messages[:] = []
     blocked = contact_wizard.ContactWizard()
     contact_wizard.ContactWizard._named_geom_shapes = original_groups
-    if not blocked._aborted or not any("Es fehlt" in str(item) for item in messages):
+    if not blocked._aborted or not any("Missing:" in str(item) for item in messages):
         log("Start-Hinweis fehlt: aborted=%s %s" % (blocked._aborted, messages))
         finish(4)
-    if any("Bitte die Kontakte" in str(item) for item in messages):
+    if any("Tick the contacts in the Include column" in str(item) for item in messages):
         log("Der Abbruch kam nicht vor der Tabellenauswahl.")
         finish(4)
     log("Gruppen-Hinweis beim Start ok")
+
+    parameter_calls = []
+
+    def reject_parameters(self):
+        parameter_calls.append(None)
+        log("Parameterdialog abgebrochen")
+        return None
+
+    def accept_parameters(self):
+        parameter_calls.append((2.1e11, 0.3, 0.01))
+        log("Parameterdialog: E=2.1e11 NU=0.3 max=0.01")
+        return (2.1e11, 0.3, 0.01)
+
+    if not hasattr(contact_wizard.ContactWizard, "_ask_study_parameters"):
+        log("Parameterdialog fehlt")
+        finish(4)
+    contact_wizard.ContactWizard._ask_study_parameters = accept_parameters
 
     wizard.parts = solids
     wizard.gap_spin.setValue(0.02)
     messages[:] = []
     wizard.createLinearStudy()
-    if not any("Bitte die Kontakte" in str(item) for item in messages):
+    if parameter_calls:
+        log("Parameterdialog vor der Auswahl: %s" % parameter_calls)
+        finish(4)
+    if not any("Tick the contacts in the Include column" in str(item) for item in messages):
         log("Auswahl-Hinweis fehlt: %s" % messages)
         finish(4)
     log("Auswahl-Hinweis ok")
@@ -179,14 +199,25 @@ try:
     log("Angehakte Zeilen: %d" % len(checked))
     if len(checked) != 64:
         finish(5)
+    contact_wizard.ContactWizard._ask_study_parameters = reject_parameters
+    messages[:] = []
+    wizard.createLinearStudy()
+    if any("can be started in AsterStudy" in str(item) for item in messages):
+        log("Abbruch hat trotzdem angelegt: %s" % messages)
+        finish(6)
+    if parameter_calls[-1] is not None:
+        log("Abbruch hat den Dialog nicht erreicht: %s" % parameter_calls)
+        finish(6)
+    log("Parameterdialog lässt sich abbrechen")
+    contact_wizard.ContactWizard._ask_study_parameters = accept_parameters
     messages[:] = []
     wizard.createLinearStudy()
     joined = "\n".join(str(item) for item in messages)
     log("--- Dialoge nach dem Anlegen ---")
     log(joined)
-    if "kann in AsterStudy gestartet werden" not in joined:
+    if "can be started in AsterStudy" not in joined:
         finish(6)
-    if "Gekoppelte Kontaktstellen: 62." not in joined:
+    if "Coupled contact sites: 62." not in joined:
         finish(6)
     for skipped in ("CONT_0_1_11", "CONT_8_9_1"):
         if skipped not in joined:
@@ -209,7 +240,7 @@ try:
         finish(7)
     if "GROUP_MA='fixed'" not in text or "GROUP_MA='load'" not in text:
         finish(7)
-    if "FX=1.0" not in text or "E=2.1e11" not in text or "NOM_CMP='VMIS'" not in text:
+    if "FX=1.0" not in text or "E=2.1e11" not in text or "NU=0.3" not in text or "NOM_CMP='VMIS'" not in text:
         finish(7)
     if text.count("AFFE_CHAR_MECA(") != 3:
         log("AFFE_CHAR_MECA kommt %d mal vor." % text.count("AFFE_CHAR_MECA("))

@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-Salome-Meca Contact Wizard v0.0.3
+Salome-Meca Contact Wizard v0.0.4
 Automatic contact detection + Code_Aster constraint generation
 
 Based on the original 3DContact.py by Lucio Gomez (psicofil)
@@ -20,7 +20,7 @@ try:
         QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QLabel,
         QDoubleSpinBox, QTableWidget, QTableWidgetItem, QComboBox,
         QAbstractItemView, QDialog, QTextEdit, QMessageBox,
-        QProgressBar, QApplication, QCheckBox
+        QProgressBar, QApplication, QCheckBox, QFormLayout, QLineEdit
     )
     from PyQt5.QtCore import Qt
 except ImportError:
@@ -28,7 +28,7 @@ except ImportError:
         QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QLabel,
         QDoubleSpinBox, QTableWidget, QTableWidgetItem, QComboBox,
         QAbstractItemView, QDialog, QTextEdit, QMessageBox,
-        QProgressBar, QApplication, QCheckBox
+        QProgressBar, QApplication, QCheckBox, QFormLayout, QLineEdit
     )
     from PyQt4.QtCore import Qt
 
@@ -51,13 +51,13 @@ class ContactWizard(QWidget):
         self.loadParts()
 
     def initUI(self):
-        self.setWindowTitle("Contact Wizard v0.0.3 - Salome-Meca")
+        self.setWindowTitle("Contact Wizard v0.0.4 - Salome-Meca")
         self.resize(950, 620)
         layout = QVBoxLayout()
 
         # Controls
         top = QHBoxLayout()
-        top.addWidget(QLabel("Gap / Toleranz:"))
+        top.addWidget(QLabel("Gap / tolerance:"))
         self.gap_spin = QDoubleSpinBox()
         self.gap_spin.setDecimals(4)
         self.gap_spin.setRange(0.0, 100.0)
@@ -65,13 +65,13 @@ class ContactWizard(QWidget):
         self.gap_spin.setSingleStep(0.001)
         top.addWidget(self.gap_spin)
 
-        self.btn_detect = QPushButton("Kontakte automatisch suchen")
+        self.btn_detect = QPushButton("Find contacts")
         self.btn_detect.clicked.connect(self.detectContacts)
         top.addWidget(self.btn_detect)
         top.addStretch()
         layout.addLayout(top)
 
-        self.status_label = QLabel("Bereit.")
+        self.status_label = QLabel("Ready.")
         self.progress = QProgressBar()
         self.progress.setRange(0, 1000)
         self.progress.setValue(0)
@@ -84,7 +84,7 @@ class ContactWizard(QWidget):
         self.table = QTableWidget()
         self.table.setColumnCount(6)
         self.table.setHorizontalHeaderLabels([
-            "Übernehmen", "Teil A", "Teil B", "Fläche", "Typ", "Aktion"
+            "Include", "Part A", "Part B", "Area", "Type", "Action"
         ])
         self.table.horizontalHeader().setStretchLastSection(True)
         self.table.setSelectionBehavior(QAbstractItemView.SelectRows)
@@ -93,11 +93,11 @@ class ContactWizard(QWidget):
 
         # Bottom
         bottom = QHBoxLayout()
-        self.btn_generate = QPushButton("Code für AsterStudy generieren")
+        self.btn_generate = QPushButton("Generate AsterStudy code")
         self.btn_generate.clicked.connect(self.generateCode)
-        self.btn_study = QPushButton("Lineare Studie anlegen")
+        self.btn_study = QPushButton("Create linear study")
         self.btn_study.clicked.connect(self.createLinearStudy)
-        self.btn_close = QPushButton("Schließen")
+        self.btn_close = QPushButton("Close")
         self.btn_close.clicked.connect(self.close)
         bottom.addWidget(self.btn_generate)
         bottom.addWidget(self.btn_study)
@@ -118,11 +118,11 @@ class ContactWizard(QWidget):
                         self.parts.append(obj)
             else:
                 QMessageBox.information(
-                    self, "Hinweis",
-                    "Keine Teile ausgewählt. Bitte Solids im Object Browser markieren und neu starten."
+                    self, "Notice",
+                    "No parts selected. Select the solids in the Object Browser and start the wizard again."
                 )
         except Exception as e:
-            QMessageBox.warning(self, "Fehler beim Laden", str(e))
+            QMessageBox.warning(self, "Load failed", str(e))
 
     def _unique_subshapes(self, part, sub_ids):
         """Return each localized sub-shape once.
@@ -522,7 +522,7 @@ class ContactWizard(QWidget):
                 try:
                     overlap = self._overlap_patches(face_a, face_b, tolerance)
                 except Exception as e:
-                    print("Flaechenpaar uebersprungen: %s" % e)
+                    print("Skipped face pair: %s" % e)
                     continue
                 if overlap is not None:
                     pairs.append(overlap)
@@ -532,7 +532,7 @@ class ContactWizard(QWidget):
         if self._detecting:
             return
         if len(self.parts) < 2:
-            QMessageBox.warning(self, "Warnung", "Bitte mindestens 2 Volumenkörper auswählen!")
+            QMessageBox.warning(self, "Warning", "Select at least two solids.")
             return
 
         body_pairs = [
@@ -553,14 +553,14 @@ class ContactWizard(QWidget):
 
         try:
             QApplication.setOverrideCursor(Qt.WaitCursor)
-            self._set_progress(0.0, "Kontaktsuche gestartet, %d Körperpaare …" % n_body)
+            self._set_progress(0.0, "Contact search started, %d body pairs …" % n_body)
             for pair_index, (i, j) in enumerate(body_pairs):
                 name_a = self._part_label(self.parts[i], i)
                 name_b = self._part_label(self.parts[j], j)
                 base = float(pair_index) / n_body
                 self._set_progress(
                     base,
-                    "Körperpaar %d/%d: %s gegen %s (Schnittprüfung)" % (
+                    "Body pair %d/%d: %s against %s (intersection)" % (
                         pair_index + 1, n_body, name_a, name_b
                     )
                 )
@@ -569,10 +569,10 @@ class ContactWizard(QWidget):
                         self.parts[i], self.parts[j], gap
                     )
                 except Exception as e:
-                    print("Fehler bei Paar %d-%d: %s" % (i, j, e))
+                    print("Pair %d-%d failed: %s" % (i, j, e))
                     self._set_progress(
                         float(pair_index + 1) / n_body,
-                        "Körperpaar %d/%d: %s gegen %s fehlgeschlagen" % (
+                        "Body pair %d/%d: %s against %s failed" % (
                             pair_index + 1, n_body, name_a, name_b
                         )
                     )
@@ -581,7 +581,7 @@ class ContactWizard(QWidget):
                 if not (isOk > 0 and res1 and res2):
                     self._set_progress(
                         float(pair_index + 1) / n_body,
-                        "Körperpaar %d/%d: %s gegen %s, keine Berührung" % (
+                        "Body pair %d/%d: %s against %s, no contact" % (
                             pair_index + 1, n_body, name_a, name_b
                         )
                     )
@@ -591,7 +591,7 @@ class ContactWizard(QWidget):
                     done = float(step) / total if total else 1.0
                     self._set_progress(
                         _base + done / n_body,
-                        "Körperpaar %d/%d: %s gegen %s, Fläche %d/%d (%d Treffer)" % (
+                        "Body pair %d/%d: %s against %s, face %d/%d (%d hits)" % (
                             _index + 1, n_body, name_a, name_b, step, total, found
                         )
                     )
@@ -601,10 +601,10 @@ class ContactWizard(QWidget):
                         self.parts[i], self.parts[j], res1, res2, gap, on_step
                     )
                 except Exception as e:
-                    print("Fehler bei Paar %d-%d: %s" % (i, j, e))
+                    print("Pair %d-%d failed: %s" % (i, j, e))
                     self._set_progress(
                         float(pair_index + 1) / n_body,
-                        "Körperpaar %d/%d: %s gegen %s fehlgeschlagen" % (
+                        "Body pair %d/%d: %s against %s failed" % (
                             pair_index + 1, n_body, name_a, name_b
                         )
                     )
@@ -613,7 +613,7 @@ class ContactWizard(QWidget):
                 for n, (face_a, face_b, area) in enumerate(pairs, start=1):
                     self._set_progress(
                         float(pair_index + 1) / n_body,
-                        "Körperpaar %d/%d: Gruppe %d/%d anlegen" % (
+                        "Body pair %d/%d: creating group %d/%d" % (
                             pair_index + 1, n_body, n, len(pairs)
                         )
                     )
@@ -643,13 +643,13 @@ class ContactWizard(QWidget):
             QApplication.restoreOverrideCursor()
 
         found = len(self.contacts)
-        self._set_progress(1.0, "Browser wird aktualisiert, %d Kontaktstellen …" % found)
+        self._set_progress(1.0, "Updating the browser, %d contact sites …" % found)
         self.fillTable()
         salome.sg.updateObjBrowser()
-        self.status_label.setText("Fertig. %d Kontaktstellen gefunden." % found)
+        self.status_label.setText("Done. Found %d contact sites." % found)
         QMessageBox.information(
-            self, "Ergebnis",
-            "%d Kontaktstellen gefunden." % found
+            self, "Result",
+            "Found %d contact sites." % found
         )
 
     def _checked_rows(self):
@@ -675,12 +675,12 @@ class ContactWizard(QWidget):
                 "Tie-Constraint (LIAISON_MAIL)",
                 "Contact",
                 "Contact with Friction",
-                "Ignorieren"
+                "Ignore"
             ])
             combo.setCurrentIndex(0)
             self.table.setCellWidget(row, 4, combo)
 
-            btn = QPushButton("Vorschau")
+            btn = QPushButton("Preview")
             btn.clicked.connect(lambda checked, r=row: self.previewContact(r))
             self.table.setCellWidget(row, 5, btn)
 
@@ -701,7 +701,7 @@ class ContactWizard(QWidget):
         try:
             gg = self._geom_gui()
         except Exception as e:
-            print("Vorschau-Fehler:", e)
+            print("Preview error:", e)
             return
         for part in bodies:
             try:
@@ -712,7 +712,7 @@ class ContactWizard(QWidget):
                 except TypeError:
                     gg.setTransparency(entry, 0.0)
             except Exception as e:
-                print("Vorschau-Fehler:", e)
+                print("Preview error:", e)
 
     def _display_body(self, gg, part):
         entry = salome.ObjectToID(part)
@@ -747,7 +747,7 @@ class ContactWizard(QWidget):
             salome.sg.UpdateView()
             self._frame_contact(gg, c)
         except Exception as e:
-            print("Vorschau-Fehler:", e)
+            print("Preview error:", e)
 
     def _frame_contact(self, gg, contact):
         """Zoom onto the contact patches and draw both bodies again at that scale."""
@@ -755,7 +755,7 @@ class ContactWizard(QWidget):
             try:
                 salome.sg.Erase(salome.ObjectToID(part))
             except Exception as exc:
-                print("Vorschau-Zoom:", exc)
+                print("Preview zoom:", exc)
         salome.sg.UpdateView()
         salome.sg.FitAll()
         self._display_body(gg, contact["partA"])
@@ -794,10 +794,10 @@ class ContactWizard(QWidget):
             return False
         self._aborted = True
         QMessageBox.warning(
-            self, "Gruppen fehlen",
-            "Die Gruppen fixed und load müssen in der Geometrie vorhanden sein.\n"
-            "Es fehlt: %s.\n"
-            "Lege die Gruppen an und starte den Wizard erneut." % ", ".join(missing)
+            self, "Groups missing",
+            "The geometry must contain the groups fixed and load.\n"
+            "Missing: %s.\n"
+            "Create the groups and start the wizard again." % ", ".join(missing)
         )
         return True
 
@@ -984,7 +984,7 @@ class ContactWizard(QWidget):
         try:
             ids = list(group.GetIDs())
         except Exception as exc:
-            print("Gruppen-IDs: %s" % exc, flush=True)
+            print("Group ids: %s" % exc, flush=True)
             return []
         centers = []
         for elem in ids:
@@ -1011,7 +1011,7 @@ class ContactWizard(QWidget):
                         point = (sx / count, sy / count, sz / count)
                 except Exception as exc:
                     if not centers:
-                        print("Elementknoten: %s" % exc, flush=True)
+                        print("Element nodes: %s" % exc, flush=True)
                     continue
             if point is not None:
                 centers.append(point)
@@ -1039,7 +1039,7 @@ class ContactWizard(QWidget):
                 vertex = geompy.MakeVertex(point[0], point[1], point[2])
             return float(geompy.MinDistance(vertex, shape))
         except Exception as exc:
-            print("Abstand Punkt-Form: %s" % exc, flush=True)
+            print("Point-to-shape distance: %s" % exc, flush=True)
             return None
         finally:
             self._discard_shape(vertex)
@@ -1081,7 +1081,7 @@ class ContactWizard(QWidget):
             if lies is None:
                 return keep_without_distance
             if not lies:
-                print("Gruppe %s verworfen, Abstand über %.6g" % (name, limit))
+                print("Discarded group %s, distance above %.6g" % (name, limit))
             return lies
 
         try:
@@ -1123,7 +1123,7 @@ class ContactWizard(QWidget):
                 return volume
             mesh.RemoveGroup(volume)
         except Exception as exc:
-            print("Volumengruppe %s: %s" % (name, exc))
+            print("Volume group %s: %s" % (name, exc))
         volume = mesh.CreateEmptyGroup(SMESH.VOLUME, name)
         volume.Add(mesh.GetElementsByType(SMESH.VOLUME))
         if volume.Size():
@@ -1131,7 +1131,91 @@ class ContactWizard(QWidget):
         mesh.RemoveGroup(volume)
         return None
 
-    def _linear_comm(self, liaison_lines):
+    def _aster_float(self, value):
+        """Format a float the way the generated command files write it."""
+        number = float(value)
+        fixed = ("%.12g" % number).replace("e+", "e")
+        if "e" in fixed:
+            return fixed
+        mantissa, exponent = ("%.12e" % number).split("e", 1)
+        sign = "-" if exponent.startswith("-") else ""
+        exponent = sign + (exponent.lstrip("+-").lstrip("0") or "0")
+        compact = mantissa.rstrip("0").rstrip(".") + "e" + exponent
+        if len(compact) < len(fixed) and float(compact) == number:
+            return compact
+        return fixed
+
+    def _ask_study_parameters(self):
+        """Ask for E, NU and the maximum mesh size.
+
+        Returns (young, poisson, max_size), or None when the dialog is cancelled.
+        """
+        dialog = QDialog(self)
+        dialog.setWindowTitle("Linear study")
+        dialog.setMinimumWidth(420)
+        layout = QVBoxLayout(dialog)
+        form = QFormLayout()
+        young_edit = QLineEdit("2.1e11")
+        poisson_edit = QLineEdit("0.3")
+        size_edit = QLineEdit("0.01")
+        form.addRow("Young's modulus E (Pa):", young_edit)
+        form.addRow("Poisson's ratio NU:", poisson_edit)
+        form.addRow("Maximum mesh size:", size_edit)
+        layout.addLayout(form)
+        layout.addWidget(QLabel(
+            "The minimum mesh size is one fifth of the maximum, and at most 0.002."
+        ))
+        buttons = QHBoxLayout()
+        ok_button = QPushButton("Create")
+        cancel_button = QPushButton("Cancel")
+        buttons.addWidget(ok_button)
+        buttons.addWidget(cancel_button)
+        layout.addLayout(buttons)
+        cancel_button.clicked.connect(dialog.reject)
+        young_edit.setFocus()
+        young_edit.selectAll()
+
+        def accept():
+            try:
+                young = float(young_edit.text().replace(",", "."))
+                poisson = float(poisson_edit.text().replace(",", "."))
+                max_size = float(size_edit.text().replace(",", "."))
+            except ValueError:
+                QMessageBox.warning(
+                    dialog, "Input",
+                    "E, NU and the mesh size must be numbers."
+                )
+                return
+            if young <= 0.0:
+                QMessageBox.warning(
+                    dialog, "Input",
+                    "Young's modulus must be greater than 0."
+                )
+                return
+            if not -1.0 < poisson < 0.5:
+                QMessageBox.warning(
+                    dialog, "Input",
+                    "Poisson's ratio must be between -1 and 0.5."
+                )
+                return
+            if max_size <= 0.0:
+                QMessageBox.warning(
+                    dialog, "Input",
+                    "The maximum mesh size must be greater than 0."
+                )
+                return
+            dialog.accept()
+
+        ok_button.clicked.connect(accept)
+        if dialog.exec_() != QDialog.Accepted:
+            return None
+        return (
+            float(young_edit.text().replace(",", ".")),
+            float(poisson_edit.text().replace(",", ".")),
+            float(size_edit.text().replace(",", ".")),
+        )
+
+    def _linear_comm(self, liaison_lines, young, poisson):
         body = "\n".join(liaison_lines)
         return """DEBUT(LANG='EN')
 
@@ -1148,7 +1232,7 @@ model = AFFE_MODELE(
     AFFE=_F(TOUT='OUI', PHENOMENE='MECANIQUE', MODELISATION='3D'),
 )
 
-steel = DEFI_MATERIAU(ELAS=_F(E=2.1e11, NU=0.3))
+steel = DEFI_MATERIAU(ELAS=_F(E=%s, NU=%s))
 
 material = AFFE_MATERIAU(MAILLAGE=mesh, AFFE=_F(TOUT='OUI', MATER=steel))
 
@@ -1215,7 +1299,7 @@ IMPR_RESU(
 )
 
 FIN()
-""" % body
+""" % (self._aster_float(young), self._aster_float(poisson), body)
 
     def _liaison_lines(self, contacts):
         distance = self.gap_spin.value()
@@ -1252,11 +1336,11 @@ FIN()
             if looked_up:
                 module_name = looked_up
         except Exception as exc:
-            print("Modulname: %s" % exc)
+            print("Module name: %s" % exc)
         try:
             desktop.activateModule(module_name)
         except Exception as exc:
-            print("AsterStudy öffnen: %s" % exc)
+            print("Open AsterStudy: %s" % exc)
             return None
         QApplication.processEvents()
         import ASTERSTUDYGUI
@@ -1274,7 +1358,7 @@ FIN()
     def _install_aster_case(self, comm, mesh_ref, result_path):
         gui = self._open_aster_study()
         if gui is None:
-            raise RuntimeError("AsterStudy ist nicht geöffnet.")
+            raise RuntimeError("AsterStudy is not open.")
         study = gui.study()
         history = study.history
         case = history.current_case
@@ -1286,13 +1370,13 @@ FIN()
                 if case.name != "LineareStudie" and "LineareStudie" not in names:
                     case.rename("LineareStudie")
             except Exception as exc:
-                print("Fallname: %s" % exc)
+                print("Case name: %s" % exc)
         stage = study.importStageFromText(
             comm, "linear", force_text=True,
             files={20: mesh_ref, 80: result_path}
         )
         if stage is None:
-            raise RuntimeError("Die Stufe wurde nicht angelegt.")
+            raise RuntimeError("The stage was not created.")
         from asterstudy.datamodel.general import FileAttr
         info_mesh = stage.handle2info[20]
         info_mesh.filename = mesh_ref
@@ -1309,7 +1393,7 @@ FIN()
             from asterstudy.gui import Context
             gui.update(autoSelect=stage, context=Context.DataSettings, autoExpand=True)
         except Exception as exc:
-            print("Ansicht: %s" % exc)
+            print("View: %s" % exc)
         return current
 
     def _write_linear_files(self, folder, comm, compound):
@@ -1328,23 +1412,23 @@ FIN()
         missing = [name for name in ("fixed", "load") if name not in groups]
         if missing:
             QMessageBox.warning(
-                self, "Gruppen fehlen",
-                "Die lineare Studie braucht die Geometriegruppen fixed und load.\n"
-                "Es fehlt: %s." % ", ".join(missing)
+                self, "Groups missing",
+                "The linear study needs the geometry groups fixed and load.\n"
+                "Missing: %s." % ", ".join(missing)
             )
             return
         if not self.parts:
             QMessageBox.warning(
-                self, "Keine Körper",
-                "Es sind keine Volumenkörper geladen."
+                self, "No solids",
+                "No solids are loaded."
             )
             return
 
         rows = self._checked_rows()
         if not rows:
             QMessageBox.information(
-                self, "Keine Auswahl",
-                "Bitte die Kontakte in der Spalte Übernehmen anhaken, die in die lineare Studie sollen."
+                self, "No selection",
+                "Tick the contacts in the Include column that belong in the linear study."
             )
             return
 
@@ -1362,11 +1446,16 @@ FIN()
                 ignored.append("%s/%s (%s)" % (contact["groupA"], contact["groupB"], typ))
         if not ties:
             QMessageBox.warning(
-                self, "Kein Tie-Constraint",
-                "Die Auswahl enthält keinen Tie-Constraint.\n"
-                "Die lineare Studie koppelt die Körper mit LIAISON_MAIL."
+                self, "No tie constraint",
+                "The selection does not contain a tie constraint.\n"
+                "The linear study couples the bodies with LIAISON_MAIL."
             )
             return
+
+        parameters = self._ask_study_parameters()
+        if parameters is None:
+            return
+        young, poisson, max_size = parameters
 
         self._building_study = True
         self.btn_detect.setEnabled(False)
@@ -1378,14 +1467,13 @@ FIN()
             QApplication.setOverrideCursor(Qt.WaitCursor)
             cursor = True
             smesh = smeshBuilder.New()
-            max_size = 0.01
             min_size = min(0.002, max_size * 0.2)
             part_meshes = []
             n_parts = len(self.parts)
             for index, solid in enumerate(self.parts):
                 self._set_progress(
                     0.7 * index / n_parts,
-                    "Vernetzung Körper %d/%d, max. Größe %.3g" % (index + 1, n_parts, max_size)
+                    "Meshing solid %d/%d, max. size %.3g" % (index + 1, n_parts, max_size)
                 )
                 mesh = smesh.Mesh(solid, "wizard_solid_%d" % index)
                 algo = mesh.Tetrahedron(algo=smeshBuilder.NETGEN_1D2D3D)
@@ -1400,8 +1488,8 @@ FIN()
                     except Exception:
                         pass
                     QMessageBox.critical(
-                        self, "Vernetzung fehlgeschlagen",
-                        "Körper %d (%s) ließ sich nicht vernetzen.%s" % (
+                        self, "Meshing failed",
+                        "Solid %d (%s) could not be meshed.%s" % (
                             index, self._part_label(solid, index), detail
                         )
                     )
@@ -1409,13 +1497,13 @@ FIN()
                 volume = self._mesh_volume_group(mesh, solid, "VOL_%d" % index)
                 if volume is None:
                     QMessageBox.critical(
-                        self, "Volumengruppe leer",
-                        "Die Volumengruppe VOL_%d ist leer." % index
+                        self, "Empty volume group",
+                        "Volume group VOL_%d is empty." % index
                     )
                     return
                 part_meshes.append(mesh)
 
-            self._set_progress(0.72, "Gruppen fixed und load übernehmen")
+            self._set_progress(0.72, "Copying groups fixed and load")
             for name in ("fixed", "load"):
                 # Only the solid that owns the geometry group. The first mesh
                 # within 0.01 would otherwise keep the faces of a neighbour.
@@ -1433,19 +1521,19 @@ FIN()
                 if chosen is None:
                     if host is None:
                         message = (
-                            "Die Geometriegruppe %s lässt sich keinem vernetzten Körper zuordnen."
+                            "Geometry group %s cannot be assigned to a meshed solid."
                             % name
                         )
                     else:
                         message = (
-                            "Die Geometriegruppe %s gehört zu %s, "
-                            "das Netz dieses Körpers enthält davon keine Flächen."
+                            "Geometry group %s belongs to %s, "
+                            "and that solid's mesh contains none of its faces."
                             % (name, self._part_label(self.parts[host], host))
                         )
-                    QMessageBox.critical(self, "Netzgruppe leer", message)
+                    QMessageBox.critical(self, "Empty mesh group", message)
                     return
                 print(
-                    "Grenzgruppe %s auf %s, %d Flächen"
+                    "Boundary group %s on %s, %d faces"
                     % (name, self._part_label(self.parts[host], host), chosen.Size())
                 )
 
@@ -1455,7 +1543,7 @@ FIN()
             for tie_index, contact in enumerate(ties):
                 self._set_progress(
                     0.75 + 0.15 * tie_index / n_ties,
-                    "Kontaktgruppe %d/%d: %s" % (tie_index + 1, n_ties, contact["groupA"])
+                    "Contact group %d/%d: %s" % (tie_index + 1, n_ties, contact["groupA"])
                 )
                 sides = (
                     (part_meshes[contact["indexA"]], contact["facesA"], contact["groupA"]),
@@ -1477,13 +1565,13 @@ FIN()
                             mesh.RemoveGroup(item)
             if not kept:
                 QMessageBox.warning(
-                    self, "Keine koppelbare Kontaktstelle",
-                    "Keine ausgewählte Kontaktstelle hat eine Netzgruppe bekommen.\n"
-                    "Ausgelassen: %s" % ", ".join(skipped)
+                    self, "No couplable contact",
+                    "No selected contact site received a mesh group.\n"
+                    "Skipped: %s" % ", ".join(skipped)
                 )
                 return
 
-            self._set_progress(0.92, "Netze werden zusammengefügt")
+            self._set_progress(0.92, "Joining meshes")
             compound = smesh.Concatenate(
                 part_meshes, True, False, 1e-5, True, "linear_assembly"
             )
@@ -1494,26 +1582,26 @@ FIN()
             absent = [name for name in needed if name not in names]
             if absent:
                 QMessageBox.critical(
-                    self, "Gruppen fehlen im Gesamtnetz",
-                    "Im zusammengefügten Netz fehlen: %s." % ", ".join(absent)
+                    self, "Groups missing from the joined mesh",
+                    "The joined mesh is missing: %s." % ", ".join(absent)
                 )
                 return
 
             folder = self._output_directory()
             result_path = os.path.join(folder, "result.med")
-            comm = self._linear_comm(self._liaison_lines(kept))
+            comm = self._linear_comm(self._liaison_lines(kept), young, poisson)
             entry = ""
             try:
                 entry = salome.ObjectToID(compound.GetMesh())
             except Exception as exc:
-                print("Netzeintrag: %s" % exc)
+                print("Mesh entry: %s" % exc)
             if not self._is_study_entry(entry):
                 try:
                     sobject = salome.myStudy.FindObject(compound.GetMesh())
                     if sobject is not None:
                         entry = sobject.GetID()
                 except Exception as exc:
-                    print("Netzeintrag: %s" % exc)
+                    print("Mesh entry: %s" % exc)
             mesh_ref = entry if self._is_study_entry(entry) else ""
             if not mesh_ref:
                 _comm_path, mesh_ref = self._write_linear_files(folder, comm, compound)
@@ -1525,7 +1613,7 @@ FIN()
             if cursor:
                 QApplication.restoreOverrideCursor()
                 cursor = False
-            self._set_progress(0.97, "AsterStudy-Fall wird angelegt")
+            self._set_progress(0.97, "Creating the AsterStudy case")
             try:
                 case = self._install_aster_case(comm, mesh_ref, result_path)
                 case_name = case.name
@@ -1533,33 +1621,37 @@ FIN()
                 comm_path, mesh_path = self._write_linear_files(folder, comm, compound)
                 QMessageBox.warning(
                     self, "AsterStudy",
-                    "Der Fall ließ sich in AsterStudy nicht anlegen (%s).\n"
-                    "Kommando-Datei: %s\n"
-                    "Netz: %s" % (exc, comm_path, mesh_path)
+                    "The case could not be created in AsterStudy (%s).\n"
+                    "Command file: %s\n"
+                    "Mesh: %s" % (exc, comm_path, mesh_path)
                 )
-                self._set_progress(1.0, "Kommando-Datei und Netz geschrieben.")
+                self._set_progress(1.0, "Wrote the command file and the mesh.")
                 return
 
             salome.sg.updateObjBrowser()
             lines = [
-                "Der Fall %s ist angelegt und kann in AsterStudy gestartet werden." % case_name,
-                "Netz: %s" % mesh_ref,
-                "Ergebnisdatei: %s" % result_path,
-                "Speicher 4096 MB, Zeitlimit 1800 s.",
-                "Gekoppelte Kontaktstellen: %d." % len(kept),
+                "Case %s has been created and can be started in AsterStudy." % case_name,
+                "Mesh: %s" % mesh_ref,
+                "Result file: %s" % result_path,
+                "Memory 4096 MB, time limit 1800 s.",
+                "Material: E = %s, NU = %s." % (
+                    self._aster_float(young), self._aster_float(poisson)
+                ),
+                "Maximum mesh size: %s." % self._aster_float(max_size),
+                "Coupled contact sites: %d." % len(kept),
             ]
             if skipped:
                 lines.append(
-                    "Ohne Netzgruppe und deshalb ohne Kopplung: %s." % ", ".join(skipped)
+                    "No mesh group, so no coupling: %s." % ", ".join(skipped)
                 )
             if ignored:
                 lines.append(
-                    "Ausgewählt, aber kein Tie-Constraint: %s." % ", ".join(ignored)
+                    "Selected, but not a tie constraint: %s." % ", ".join(ignored)
                 )
-            self._set_progress(1.0, "Lineare Studie %s angelegt." % case_name)
-            QMessageBox.information(self, "Lineare Studie", "\n".join(lines))
+            self._set_progress(1.0, "Linear study %s created." % case_name)
+            QMessageBox.information(self, "Linear study", "\n".join(lines))
         except Exception as exc:
-            QMessageBox.critical(self, "Lineare Studie", str(exc))
+            QMessageBox.critical(self, "Linear study", str(exc))
         finally:
             self._building_study = False
             self.btn_detect.setEnabled(True)
@@ -1614,14 +1706,14 @@ FIN()
         code = self.build_comm(liaison, contact, friction)
 
         dlg = QDialog(self)
-        dlg.setWindowTitle("Generierter Code für AsterStudy")
+        dlg.setWindowTitle("Generated AsterStudy code")
         dlg.resize(820, 580)
         v = QVBoxLayout(dlg)
         txt = QTextEdit()
         txt.setPlainText(code)
         txt.setReadOnly(True)
         v.addWidget(txt)
-        btn = QPushButton("Schließen")
+        btn = QPushButton("Close")
         btn.clicked.connect(dlg.accept)
         v.addWidget(btn)
         dlg.exec_()
@@ -1630,16 +1722,16 @@ FIN()
             with open("aster_contacts.comm", "w", encoding="utf-8") as f:
                 f.write(code)
             QMessageBox.information(
-                self, "Gespeichert",
-                "Code wurde als aster_contacts.comm gespeichert.\nIn AsterStudy einfügen."
+                self, "Saved",
+                "The code was saved as aster_contacts.comm.\nPaste it into AsterStudy."
             )
         except Exception as e:
-            QMessageBox.warning(self, "Speichern fehlgeschlagen", str(e))
+            QMessageBox.warning(self, "Save failed", str(e))
 
     def build_comm(self, liaison, contact, friction):
-        lines = ["# === Automatisch generierte Kontaktdefinitionen (v0.0.3) ===", ""]
+        lines = ["# === Automatically generated contact definitions (v0.0.4) ===", ""]
         if liaison:
-            lines.append("# Tie-Constraints (in AFFE_CHAR_MECA einfügen)")
+            lines.append("# Tie constraints (paste into AFFE_CHAR_MECA)")
             lines.append("LIAISON_MAIL = (")
             lines.extend(liaison)
             lines.append("),")
@@ -1654,9 +1746,9 @@ FIN()
             lines.append("    ),")
             lines.append("),")
             lines.append("")
-        lines.append("# Hinweis: Sklavengruppen sind die Kontaktflächen.")
-        lines.append("# VOL_<i> muss die Volumengruppe des Körpers i sein (3D-Master von LIAISON_MAIL).")
-        lines.append("# Gruppen nach dem Meshing mit 'Create Groups from Geometry' übernehmen.")
+        lines.append("# Note: slave groups are the contact faces.")
+        lines.append("# VOL_<i> must be the volume group of body i (3D master of LIAISON_MAIL).")
+        lines.append("# After meshing, transfer the groups with 'Create Groups from Geometry'.")
         return "\n".join(lines)
 
 

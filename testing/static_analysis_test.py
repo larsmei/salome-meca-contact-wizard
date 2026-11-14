@@ -122,7 +122,7 @@ try:
     original_progress = contact_wizard.ContactWizard._set_progress
 
     def logged_progress(self, fraction, text):
-        if int(round(fraction * 1000)) % 50 == 0 or "fehlgeschlagen" in text or "Keine" in text:
+        if int(round(fraction * 1000)) % 50 == 0 or "failed" in text:
             log("Fortschritt %3.0f%% %s" % (100.0 * fraction, text))
         return original_progress(self, fraction, text)
 
