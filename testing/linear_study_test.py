@@ -2,9 +2,9 @@
 """Button test: require fixed/load, then build a runnable linear case.
 
 Launch with testing/run_salome_test.sh on a copy of test.hdf. The script
-does not save the study. At gap 0.02 the fixture has 56 contact sites.
+does not save the study. At gap 0.02 the fixture has 64 contact sites.
 Two of them stay out of the case because they produce no mesh group:
-CONT_0_1_7 and CONT_8_9_1. The mesh is 134076 nodes and 436199 tetras.
+CONT_0_1_11 and CONT_8_9_1. The mesh is 134076 nodes and 436199 tetras.
 """
 import os
 import sys
@@ -173,11 +173,11 @@ try:
 
     wizard.detectContacts()
     log("Kontaktstellen: %d" % len(wizard.contacts))
-    if len(wizard.contacts) != 56:
+    if len(wizard.contacts) != 64:
         finish(5)
     checked = wizard._checked_rows()
     log("Angehakte Zeilen: %d" % len(checked))
-    if len(checked) != 56:
+    if len(checked) != 64:
         finish(5)
     messages[:] = []
     wizard.createLinearStudy()
@@ -186,9 +186,9 @@ try:
     log(joined)
     if "kann in AsterStudy gestartet werden" not in joined:
         finish(6)
-    if "Gekoppelte Kontaktstellen: 54." not in joined:
+    if "Gekoppelte Kontaktstellen: 62." not in joined:
         finish(6)
-    for skipped in ("CONT_0_1_7", "CONT_8_9_1"):
+    for skipped in ("CONT_0_1_11", "CONT_8_9_1"):
         if skipped not in joined:
             log("Ausgelassener Kontakt fehlt im Hinweis: %s" % skipped)
             finish(6)
@@ -232,7 +232,7 @@ try:
         finish(7)
     if "LIAISON_MAIL" not in text or "DISTANCE_MAX = 0.02" not in text:
         finish(7)
-    if "CONT_0_1_7" in text or "CONT_8_9_1" in text:
+    if "CONT_0_1_11" in text or "CONT_8_9_1" in text:
         log("Ausgelassener Kontakt steht im Kommando.")
         finish(7)
     if not (stage.handle2info[20].attr & FileAttr.In):
@@ -271,7 +271,7 @@ try:
         if required not in names:
             log("Netzgruppe fehlt: %s" % required)
             finish(8)
-    for skipped in ("CONT_0_1_7_A", "CONT_0_1_7_B", "CONT_8_9_1_A", "CONT_8_9_1_B"):
+    for skipped in ("CONT_0_1_11_A", "CONT_0_1_11_B", "CONT_8_9_1_A", "CONT_8_9_1_B"):
         if skipped in names:
             log("Ungenutzte Gruppe noch im Netz: %s" % skipped)
             finish(8)

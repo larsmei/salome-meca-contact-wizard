@@ -1,6 +1,6 @@
 # Salome-Meca Contact Wizard
 
-**Version 0.0.1**
+**Version 0.0.2**
 
 A graphical wizard for Salome-Meca that automatically detects contacts between volume bodies and generates ready-to-use Code_Aster commands (`LIAISON_MAIL` for ties and `DEFI_CONTACT` for contacts).
 
@@ -12,8 +12,8 @@ Based on the original `3DContact.py` script by Lucio Gomez (psicofil).
 - Every contact site between two bodies, not only the first
 - A progress bar during the search
 - Interactive table listing all contact pairs
-- Preview of the two bodies at half transparency, with the first body's patch in red and the second body's patch in green
-- The contact patch is the common overlap within the gap tolerance, including a planar slab and a curved band
+- Preview of the two bodies at half transparency, with the first body's patch in red and the second body's patch in green, zoomed onto the contact
+- The contact patch is the common overlap within the gap tolerance: parallel faces, planar faces up to 10 degrees apart, and a curved band
 - Per-contact type selection via dropdown:
   - Tie-Constraint (`LIAISON_MAIL`)
   - Contact (`DEFI_CONTACT` CONTINUE)
@@ -52,7 +52,7 @@ The linear case uses:
 - MED output of displacements and von Mises stress (`SIEQ_NOEU`, component `VMIS`)
 - 4096 MB and a time limit of 1800 s
 
-The mesh is referenced as the live SMESH object. The result file is `linear_study/result.med` next to the opened study. A patch that does not produce a mesh group is left out and named in the dialog. On `test.hdf` at gap 0.02 that happens for `CONT_0_1_7` and `CONT_8_9_1`.
+The mesh is referenced as the live SMESH object. The result file is `linear_study/result.med` next to the opened study. A patch that does not produce a mesh group is left out and named in the dialog. On `test.hdf` at gap 0.02 that happens for `CONT_0_1_11` and `CONT_8_9_1`.
 
 The first time AsterStudy opens, Salome may ask for the code_aster version.
 
@@ -79,7 +79,7 @@ testing/run_salome_test.sh linear_study_test.py
 | `testing/linear_study_test.py` | The linear-study button: missing `fixed`/`load`, empty selection, then the AsterStudy case |
 | `testing/shot_results.py` | Redraw the two result screenshots from an existing MED file (`CONTACT_RESULT_MED`, default `/tmp/contact_static/result.med`) |
 
-On this fixture the gap-0.02 search finds 56 sites. The linear case keeps 54 of them and builds a mesh of 134076 nodes and 436199 tetrahedra. The solved displacement magnitude runs up to about `3.24e-8` m and the von Mises stress peaks near 2154 Pa. Reference pictures are in `testing/screenshots/`. Logs and the calculation files stay under `/tmp`.
+On this fixture the gap-0.02 search finds 64 sites. The linear case keeps 62 of them and builds a mesh of 134076 nodes and 436199 tetrahedra. Reference pictures in `testing/screenshots/` are from an earlier solve of the 54-tie model: the displacement magnitude runs up to about `3.24e-8` m and the von Mises stress peaks near 2154 Pa. Logs and the calculation files stay under `/tmp`.
 
 ## License
 

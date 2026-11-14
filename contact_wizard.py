@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-Salome-Meca Contact Wizard v0.0.1
+Salome-Meca Contact Wizard v0.0.2
 Automatic contact detection + Code_Aster constraint generation
 
 Based on the original 3DContact.py by Lucio Gomez (psicofil)
@@ -32,7 +32,7 @@ except ImportError:
     )
     from PyQt4.QtCore import Qt
 
-geompy = geomBuilder.New(salome.myStudy)
+geompy = geomBuilder.New()
 
 
 class ContactWizard(QWidget):
@@ -51,7 +51,7 @@ class ContactWizard(QWidget):
         self.loadParts()
 
     def initUI(self):
-        self.setWindowTitle("Contact Wizard v0.0.1 - Salome-Meca")
+        self.setWindowTitle("Contact Wizard v0.0.2 - Salome-Meca")
         self.resize(950, 620)
         layout = QVBoxLayout()
 
@@ -403,6 +403,53 @@ class ContactWizard(QWidget):
         )
         return patch_planar, patch_other, area
 
+    def _angled_overlap(self, face_a, face_b, tolerance, area_a, area_b):
+        """Footprint of two planar faces that meet at a shallow angle.
+
+        A flange taper is not parallel, but the region inside the gap is
+        still a contact. Faces steeper than 10 degrees are left out: a
+        steeper intersection is an edge crossing the tolerance slab.
+        """
+        if tolerance <= 0.0:
+            return None
+        plane_a = self._face_plane(face_a)
+        plane_b = self._face_plane(face_b)
+        if plane_a is None or plane_b is None:
+            return None
+        # cos(10 degrees). The INP inner flange in assembly1 is about 8 degrees.
+        if abs(self._dot(plane_a[1], plane_b[1])) < 0.984807753012208:
+            return None
+        try:
+            if float(geompy.MinDistance(face_a, face_b)) > tolerance + 1e-8:
+                return None
+        except Exception:
+            return None
+        normal = plane_a[1]
+        direction = geompy.MakeVectorDXDYDZ(normal[0], normal[1], normal[2])
+        try:
+            slab = geompy.MakePrismVecH2Ways(face_a, direction, tolerance)
+            common = geompy.MakeCommon(slab, face_b)
+        except Exception:
+            return None
+        collected = self._collect_overlap(common, area_a, area_b)
+        if collected is None:
+            return None
+        patch_b = self._pack_faces(collected[0])
+        area = collected[1]
+        try:
+            punch = geompy.MakePrismVecH2Ways(patch_b, direction, tolerance)
+            on_a = self._collect_overlap(
+                geompy.MakeCommon(punch, face_a), area_a, area_b
+            )
+        except Exception:
+            return None
+        if on_a is None:
+            return None
+        patch_a = geompy.MakeTranslation(
+            self._pack_faces(on_a[0]), 0.0, 0.0, 0.0
+        )
+        return patch_a, patch_b, area
+
     def _overlap_patches(self, face_a, face_b, tolerance):
         area_a = self._shape_area(face_a)
         area_b = self._shape_area(face_b)
@@ -418,6 +465,12 @@ class ContactWizard(QWidget):
             parallel = None
         if parallel is not None:
             return parallel
+        try:
+            angled = self._angled_overlap(face_a, face_b, tolerance, area_a, area_b)
+        except Exception:
+            angled = None
+        if angled is not None:
+            return angled
         try:
             if self._face_plane(face_a) is not None:
                 band = self._band_overlap(face_a, face_b, tolerance, area_a, area_b)
@@ -692,9 +745,24 @@ class ContactWizard(QWidget):
             self._display_contact_face(gg, c["facesB"], 0, 255, 0)
             self._preview_bodies = [c["partA"], c["partB"]]
             salome.sg.UpdateView()
-            salome.sg.FitAll()
+            self._frame_contact(gg, c)
         except Exception as e:
             print("Vorschau-Fehler:", e)
+
+    def _frame_contact(self, gg, contact):
+        """Zoom onto the contact patches and draw both bodies again at that scale."""
+        for part in (contact["partA"], contact["partB"]):
+            try:
+                salome.sg.Erase(salome.ObjectToID(part))
+            except Exception as exc:
+                print("Vorschau-Zoom:", exc)
+        salome.sg.UpdateView()
+        salome.sg.FitAll()
+        self._display_body(gg, contact["partA"])
+        self._display_body(gg, contact["partB"])
+        self._display_contact_face(gg, contact["facesA"], 255, 0, 0)
+        self._display_contact_face(gg, contact["facesB"], 0, 255, 0)
+        salome.sg.UpdateView()
 
     def closeEvent(self, event):
         self._restore_preview_bodies()
@@ -1334,7 +1402,7 @@ FIN()
             QMessageBox.warning(self, "Speichern fehlgeschlagen", str(e))
 
     def build_comm(self, liaison, contact, friction):
-        lines = ["# === Automatisch generierte Kontaktdefinitionen (v0.0.1) ===", ""]
+        lines = ["# === Automatisch generierte Kontaktdefinitionen (v0.0.2) ===", ""]
         if liaison:
             lines.append("# Tie-Constraints (in AFFE_CHAR_MECA einfügen)")
             lines.append("LIAISON_MAIL = (")
