@@ -20,7 +20,7 @@ try:
         QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QLabel,
         QDoubleSpinBox, QTableWidget, QTableWidgetItem, QComboBox,
         QAbstractItemView, QDialog, QTextEdit, QMessageBox,
-        QProgressBar, QApplication
+        QProgressBar, QApplication, QCheckBox
     )
     from PyQt5.QtCore import Qt
 except ImportError:
@@ -28,7 +28,7 @@ except ImportError:
         QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QLabel,
         QDoubleSpinBox, QTableWidget, QTableWidgetItem, QComboBox,
         QAbstractItemView, QDialog, QTextEdit, QMessageBox,
-        QProgressBar, QApplication
+        QProgressBar, QApplication, QCheckBox
     )
     from PyQt4.QtCore import Qt
 
@@ -42,9 +42,12 @@ class ContactWizard(QWidget):
         self.contacts = []
         self._detecting = False
         self._building_study = False
+        self._aborted = False
         self._preview_bodies = []
         self._plane_cache = {}
         self.initUI()
+        if self._abort_without_boundary_groups():
+            return
         self.loadParts()
 
     def initUI(self):
@@ -79,9 +82,9 @@ class ContactWizard(QWidget):
 
         # Table
         self.table = QTableWidget()
-        self.table.setColumnCount(5)
+        self.table.setColumnCount(6)
         self.table.setHorizontalHeaderLabels([
-            "Teil A", "Teil B", "Fläche", "Typ", "Aktion"
+            "Übernehmen", "Teil A", "Teil B", "Fläche", "Typ", "Aktion"
         ])
         self.table.horizontalHeader().setStretchLastSection(True)
         self.table.setSelectionBehavior(QAbstractItemView.SelectRows)
@@ -596,12 +599,23 @@ class ContactWizard(QWidget):
             "%d Kontaktstellen gefunden." % found
         )
 
+    def _checked_rows(self):
+        rows = []
+        for row in range(self.table.rowCount()):
+            box = self.table.cellWidget(row, 0)
+            if isinstance(box, QCheckBox) and box.isChecked():
+                rows.append(row)
+        return rows
+
     def fillTable(self):
         self.table.setRowCount(len(self.contacts))
         for row, c in enumerate(self.contacts):
-            self.table.setItem(row, 0, QTableWidgetItem(c["nameA"]))
-            self.table.setItem(row, 1, QTableWidgetItem(c["nameB"]))
-            self.table.setItem(row, 2, QTableWidgetItem("%.4f" % c["area"]))
+            box = QCheckBox()
+            box.setChecked(True)
+            self.table.setCellWidget(row, 0, box)
+            self.table.setItem(row, 1, QTableWidgetItem(c["nameA"]))
+            self.table.setItem(row, 2, QTableWidgetItem(c["nameB"]))
+            self.table.setItem(row, 3, QTableWidgetItem("%.4f" % c["area"]))
 
             combo = QComboBox()
             combo.addItems([
@@ -611,11 +625,11 @@ class ContactWizard(QWidget):
                 "Ignorieren"
             ])
             combo.setCurrentIndex(0)
-            self.table.setCellWidget(row, 3, combo)
+            self.table.setCellWidget(row, 4, combo)
 
             btn = QPushButton("Vorschau")
             btn.clicked.connect(lambda checked, r=row: self.previewContact(r))
-            self.table.setCellWidget(row, 4, btn)
+            self.table.setCellWidget(row, 5, btn)
 
     def onRowSelected(self):
         rows = self.table.selectionModel().selectedRows()
@@ -685,6 +699,39 @@ class ContactWizard(QWidget):
     def closeEvent(self, event):
         self._restore_preview_bodies()
         super(ContactWizard, self).closeEvent(event)
+
+    def _missing_boundary_groups(self):
+        """Names among fixed and load that are absent from the geometry."""
+        import time
+        missing = ["fixed", "load"]
+        deadline = time.time() + 15.0
+        while True:
+            found = self._named_geom_shapes(("fixed", "load"))
+            missing = [name for name in ("fixed", "load") if name not in found]
+            if not missing:
+                return []
+            try:
+                component = salome.myStudy.FindComponent("GEOM")
+            except Exception:
+                component = None
+            if component is not None or time.time() >= deadline:
+                return missing
+            QApplication.processEvents()
+            time.sleep(0.2)
+
+    def _abort_without_boundary_groups(self):
+        """Stop the wizard until the geometry contains fixed and load."""
+        missing = self._missing_boundary_groups()
+        if not missing:
+            return False
+        self._aborted = True
+        QMessageBox.warning(
+            self, "Gruppen fehlen",
+            "Die Gruppen fixed und load müssen in der Geometrie vorhanden sein.\n"
+            "Es fehlt: %s.\n"
+            "Lege die Gruppen an und starte den Wizard erneut." % ", ".join(missing)
+        )
+        return True
 
     def _named_geom_shapes(self, names):
         """GEOM objects whose study name is exactly one of `names`."""
@@ -821,8 +868,16 @@ material = AFFE_MATERIAU(MAILLAGE=mesh, AFFE=_F(TOUT='OUI', MATER=steel))
 
 load = AFFE_CHAR_MECA(
     MODELE=model,
-    DDL_IMPO=_F(GROUP_MA='fixed', DX=0.0, DY=0.0, DZ=0.0),
     FORCE_FACE=_F(GROUP_MA='load', FX=1.0),
+)
+
+boundary = AFFE_CHAR_MECA(
+    MODELE=model,
+    DDL_IMPO=_F(GROUP_MA='fixed', DX=0.0, DY=0.0, DZ=0.0),
+)
+
+ties = AFFE_CHAR_MECA(
+    MODELE=model,
     LIAISON_MAIL=(
 %s
     ),
@@ -831,7 +886,11 @@ load = AFFE_CHAR_MECA(
 result = MECA_STATIQUE(
     MODELE=model,
     CHAM_MATER=material,
-    EXCIT=_F(CHARGE=load),
+    EXCIT=(
+        _F(CHARGE=load),
+        _F(CHARGE=boundary),
+        _F(CHARGE=ties),
+    ),
 )
 
 result = CALC_CHAMP(
@@ -995,12 +1054,11 @@ FIN()
             )
             return
 
-        selected = self.table.selectionModel().selectedRows()
-        rows = sorted({item.row() for item in selected})
+        rows = self._checked_rows()
         if not rows:
             QMessageBox.information(
                 self, "Keine Auswahl",
-                "Bitte die Kontakte in der Tabelle auswählen, die in die lineare Studie sollen."
+                "Bitte die Kontakte in der Spalte Übernehmen anhaken, die in die lineare Studie sollen."
             )
             return
 
@@ -1009,7 +1067,7 @@ FIN()
         for row in rows:
             if row < 0 or row >= len(self.contacts):
                 continue
-            combo = self.table.cellWidget(row, 3)
+            combo = self.table.cellWidget(row, 4)
             typ = combo.currentText() if combo is not None else ""
             contact = self.contacts[row]
             if "Tie" in typ:
@@ -1214,7 +1272,7 @@ FIN()
 
         ties = {}
         for row in range(self.table.rowCount()):
-            combo = self.table.cellWidget(row, 3)
+            combo = self.table.cellWidget(row, 4)
             typ = combo.currentText()
             c = self.contacts[row]
 
@@ -1301,4 +1359,5 @@ FIN()
 
 if __name__ == "__main__":
     wizard = ContactWizard()
-    wizard.show()
+    if not wizard._aborted:
+        wizard.show()

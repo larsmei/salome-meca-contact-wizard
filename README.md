@@ -33,13 +33,14 @@ Based on the original `3DContact.py` script by Lucio Gomez (psicofil).
 1. Clone or download this repository.
 2. Open Salome-Meca and switch to the **Geometry** module.
 3. Select the volume bodies between which you want to detect contacts (or leave none selected to try all solids).
-4. Go to `File → Load Script...` and select `contact_wizard.py`.
-5. Adjust the gap tolerance if needed and click **"Kontakte automatisch suchen"**.
-6. Review the list, choose the desired connection type for each contact pair.
-7. Click **"Code für AsterStudy generieren"** to write `aster_contacts.comm` in the current directory.
-8. Copy the generated code into your AsterStudy case (into `AFFE_CHAR_MECA` for ties and/or as a `DEFI_CONTACT` definition).
+4. The geometry must already contain groups named exactly `fixed` and `load`. Without them the wizard stops and asks for those groups.
+5. Go to `File → Load Script...` and select `contact_wizard.py`.
+6. Adjust the gap tolerance if needed and click **"Kontakte automatisch suchen"**.
+7. Review the list and choose the connection type for each contact pair. The column **Übernehmen** marks the rows for the linear study.
+8. Click **"Code für AsterStudy generieren"** to write `aster_contacts.comm` in the current directory.
+9. Copy the generated code into your AsterStudy case (into `AFFE_CHAR_MECA` for ties and/or as a `DEFI_CONTACT` definition).
 
-For a complete linear case, select the tie rows and click **"Lineare Studie anlegen"**. The geometry must already contain groups named exactly `fixed` and `load`. The button then meshes every loaded solid, creates the case `LineareStudie`, and leaves it ready to run. It does not start the calculation and it does not save the study.
+For a complete linear case, tick the tie rows and click **"Lineare Studie anlegen"**. The button meshes every loaded solid, creates the case `LineareStudie`, and leaves it ready to run. It does not start the calculation and it does not save the study. Loads, boundary conditions and contact sets are three separate `AFFE_CHAR_MECA` commands.
 
 The linear case uses:
 
@@ -47,7 +48,7 @@ The linear case uses:
 - steel, `E = 2.1e11`, `NU = 0.3`
 - `DDL_IMPO` on group `fixed` with `DX = DY = DZ = 0`
 - `FORCE_FACE` on group `load` with `FX = 1`
-- one `LIAISON_MAIL` factor per selected tie pair: slave groups are the contact patches, the master is the volume group `VOL_<i>` of the second body, `DISTANCE_MAX` is the gap tolerance
+- one `LIAISON_MAIL` factor per ticked tie pair, in its own `AFFE_CHAR_MECA`: slave groups are the contact patches, the master is the volume group `VOL_<i>` of the second body, `DISTANCE_MAX` is the gap tolerance
 - MED output of displacements and von Mises stress (`SIEQ_NOEU`, component `VMIS`)
 - 4096 MB and a time limit of 1800 s
 

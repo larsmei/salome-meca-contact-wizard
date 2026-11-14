@@ -390,8 +390,16 @@ material = AFFE_MATERIAU(MAILLAGE=mesh, AFFE=_F(TOUT='OUI', MATER=steel))
 
 load = AFFE_CHAR_MECA(
     MODELE=model,
-    DDL_IMPO=_F(GROUP_MA='fixed', DX=0.0, DY=0.0, DZ=0.0),
     FORCE_FACE=_F(GROUP_MA='load', FX=1.0),
+)
+
+boundary = AFFE_CHAR_MECA(
+    MODELE=model,
+    DDL_IMPO=_F(GROUP_MA='fixed', DX=0.0, DY=0.0, DZ=0.0),
+)
+
+ties = AFFE_CHAR_MECA(
+    MODELE=model,
     LIAISON_MAIL=(
 %s
     ),
@@ -400,7 +408,11 @@ load = AFFE_CHAR_MECA(
 result = MECA_STATIQUE(
     MODELE=model,
     CHAM_MATER=material,
-    EXCIT=_F(CHARGE=load),
+    EXCIT=(
+        _F(CHARGE=load),
+        _F(CHARGE=boundary),
+        _F(CHARGE=ties),
+    ),
 )
 
 result = CALC_CHAMP(

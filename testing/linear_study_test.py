@@ -11,7 +11,11 @@ import sys
 import time
 import traceback
 
-ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+try:
+    ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+except NameError:
+    # Salome runs a command-line script with exec() and does not set __file__.
+    ROOT = os.environ.get("CONTACT_WIZARD_ROOT", "/home/lars/src/salome-meca-contact-wizard")
 LOG_PATH = "/tmp/linear_study_test.log"
 DONE_PATH = "/tmp/linear_study_test.done"
 
@@ -137,25 +141,29 @@ try:
     contact_wizard.ContactWizard._set_progress = logged_progress
 
     wizard = contact_wizard.ContactWizard()
+    if wizard._aborted:
+        log("Wizard ist trotz vorhandener Gruppen abgebrochen.")
+        finish(3)
     found = wizard._named_geom_shapes(("fixed", "load"))
     log("Gruppen %s" % sorted(found))
     if set(found) != {"fixed", "load"}:
         finish(3)
 
-    wizard._named_geom_shapes = lambda names: {}
+    original_groups = contact_wizard.ContactWizard._named_geom_shapes
+    contact_wizard.ContactWizard._named_geom_shapes = lambda self, names: {}
     messages[:] = []
-    wizard.createLinearStudy()
-    if not any("Es fehlt" in str(item) for item in messages):
-        log("Gruppen-Hinweis fehlt: %s" % messages)
+    blocked = contact_wizard.ContactWizard()
+    contact_wizard.ContactWizard._named_geom_shapes = original_groups
+    if not blocked._aborted or not any("Es fehlt" in str(item) for item in messages):
+        log("Start-Hinweis fehlt: aborted=%s %s" % (blocked._aborted, messages))
         finish(4)
-    log("Gruppen-Hinweis ok")
-    wizard._named_geom_shapes = contact_wizard.ContactWizard._named_geom_shapes.__get__(
-        wizard, contact_wizard.ContactWizard
-    )
+    if any("Bitte die Kontakte" in str(item) for item in messages):
+        log("Der Abbruch kam nicht vor der Tabellenauswahl.")
+        finish(4)
+    log("Gruppen-Hinweis beim Start ok")
 
     wizard.parts = solids
     wizard.gap_spin.setValue(0.02)
-    wizard.table.clearSelection()
     messages[:] = []
     wizard.createLinearStudy()
     if not any("Bitte die Kontakte" in str(item) for item in messages):
@@ -167,7 +175,10 @@ try:
     log("Kontaktstellen: %d" % len(wizard.contacts))
     if len(wizard.contacts) != 56:
         finish(5)
-    wizard.table.selectAll()
+    checked = wizard._checked_rows()
+    log("Angehakte Zeilen: %d" % len(checked))
+    if len(checked) != 56:
+        finish(5)
     messages[:] = []
     wizard.createLinearStudy()
     joined = "\n".join(str(item) for item in messages)
@@ -199,6 +210,25 @@ try:
     if "GROUP_MA='fixed'" not in text or "GROUP_MA='load'" not in text:
         finish(7)
     if "FX=1.0" not in text or "E=2.1e11" not in text or "NOM_CMP='VMIS'" not in text:
+        finish(7)
+    if text.count("AFFE_CHAR_MECA(") != 3:
+        log("AFFE_CHAR_MECA kommt %d mal vor." % text.count("AFFE_CHAR_MECA("))
+        finish(7)
+    load_part, boundary_part, ties_part = (
+        text.split("boundary = AFFE_CHAR_MECA(", 1)[0],
+        text.split("boundary = AFFE_CHAR_MECA(", 1)[1].split("ties = AFFE_CHAR_MECA(", 1)[0],
+        text.split("ties = AFFE_CHAR_MECA(", 1)[1].split("result = MECA_STATIQUE(", 1)[0],
+    )
+    if "FORCE_FACE" not in load_part or "DDL_IMPO" in load_part or "LIAISON_MAIL" in load_part:
+        log("Lasten und andere Bedingungen stehen in einem Aufruf.")
+        finish(7)
+    if "DDL_IMPO" not in boundary_part or "FORCE_FACE" in boundary_part or "LIAISON_MAIL" in boundary_part:
+        log("Randbedingungen sind nicht allein.")
+        finish(7)
+    if "LIAISON_MAIL" not in ties_part or "FORCE_FACE" in ties_part or "DDL_IMPO" in ties_part:
+        log("Kontaktsätze sind nicht allein.")
+        finish(7)
+    if "_F(CHARGE=load)" not in text or "_F(CHARGE=boundary)" not in text or "_F(CHARGE=ties)" not in text:
         finish(7)
     if "LIAISON_MAIL" not in text or "DISTANCE_MAX = 0.02" not in text:
         finish(7)
